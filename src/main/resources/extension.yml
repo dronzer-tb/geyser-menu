@@ -1,0 +1,8 @@
+id: geysermenu
+name: GeyserMenu
+main: com.geysermenu.extension.GeyserMenuExtension
+api: 2.9.0
+version: 1.0.0-SNAPSHOT
+authors:
+  - kasniya
+  - DronzerStudios
