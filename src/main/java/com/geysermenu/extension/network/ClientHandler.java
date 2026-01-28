@@ -76,6 +76,8 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
             case FORM_REQUEST -> handleFormRequest(packet);
             case REGISTER_BUTTONS -> handleRegisterButtons(packet);
             case PLAYER_LIST -> handlePlayerListRequest();
+            case OPEN_MAIN_MENU -> handleOpenMainMenu(packet);
+            case REORDER_BUTTON -> handleReorderButton(packet);
             case PING -> sendPacket(new Packet(Packet.PacketType.PONG, ""));
             default -> sendError("Unknown packet type: " + packet.getType());
         }
@@ -132,6 +134,82 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
         } catch (Exception e) {
             extension.logger().error("Error registering buttons", e);
             sendError("Failed to register buttons: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle request to open the main menu for a player.
+     * This is triggered by the /gemu command from companion plugins.
+     */
+    private void handleOpenMainMenu(Packet packet) {
+        if (!authenticated) {
+            sendError("Not authenticated");
+            return;
+        }
+
+        try {
+            // Payload contains the player UUID
+            Map<String, String> data = GSON.fromJson(packet.getPayload(), Map.class);
+            String playerUuidStr = data.get("playerUuid");
+            
+            if (playerUuidStr == null) {
+                sendError("Player UUID not provided");
+                return;
+            }
+            
+            UUID playerUuid = UUID.fromString(playerUuidStr);
+            GeyserConnection connection = GeyserApi.api().connectionByUuid(playerUuid);
+            
+            if (connection == null) {
+                sendError("Player not found or not a Bedrock player: " + playerUuidStr);
+                return;
+            }
+            
+            extension.debug("Opening main menu for player via companion request: " + connection.bedrockUsername());
+            extension.openMenuForPlayer(connection);
+            
+        } catch (Exception e) {
+            extension.logger().error("Error opening main menu", e);
+            sendError("Failed to open main menu: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handle request to reorder a button to a specific position.
+     */
+    private void handleReorderButton(Packet packet) {
+        if (!authenticated) {
+            sendError("Not authenticated");
+            return;
+        }
+
+        try {
+            Map<String, Object> data = GSON.fromJson(packet.getPayload(), Map.class);
+            String buttonName = (String) data.get("buttonName");
+            int position = ((Number) data.get("position")).intValue();
+            
+            if (buttonName == null || buttonName.isEmpty()) {
+                sendError("Button name not provided");
+                return;
+            }
+            
+            if (position < 1) {
+                sendError("Position must be 1 or greater");
+                return;
+            }
+            
+            ButtonManager buttonManager = server.getButtonManager();
+            boolean success = buttonManager.setButtonPosition(buttonName, position);
+            
+            if (success) {
+                extension.logger().info("Button '" + buttonName + "' moved to position " + position);
+            } else {
+                sendError("Button not found: " + buttonName);
+            }
+            
+        } catch (Exception e) {
+            extension.logger().error("Error reordering button", e);
+            sendError("Failed to reorder button: " + e.getMessage());
         }
     }
 

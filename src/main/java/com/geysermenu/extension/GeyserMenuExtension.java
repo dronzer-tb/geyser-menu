@@ -26,6 +26,7 @@ public class GeyserMenuExtension implements Extension {
     private MenuServer menuServer;
     private MenuPlayerManager playerManager;
     private InventoryHandler inventoryHandler;
+    private boolean geyserExtrasInstalled = false;
 
     @Subscribe
     public void onPreInitialize(GeyserPreInitializeEvent event) {
@@ -52,17 +53,59 @@ public class GeyserMenuExtension implements Extension {
             registerPacketInjectors();
             logger().info("Double-click inventory menu detection enabled");
         }
+        
+        // Check for GeyserExtras and notify admins
+        checkForGeyserExtras();
 
         debug("TCP server started, inventory handler registered");
         logger().info("GeyserMenu v" + this.description().version() + " has been enabled!");
+    }
+    
+    /**
+     * Check if GeyserExtras extension is installed and notify admins if so.
+     */
+    private void checkForGeyserExtras() {
+        try {
+            // Check if GeyserExtras is loaded as an extension
+            boolean found = this.geyserApi().extensionManager().extensions().stream()
+                .anyMatch(ext -> ext.description().id().equalsIgnoreCase("geyserextras") 
+                              || ext.description().name().equalsIgnoreCase("GeyserExtras"));
+            
+            if (found) {
+                geyserExtrasInstalled = true;
+                
+                logger().warning("========================================");
+                logger().warning("GeyserExtras detected!");
+                logger().warning("Please disable GeyserExtras custom menu");
+                logger().warning("in its config to avoid conflicts with");
+                logger().warning("GeyserMenu's inventory double-click menu.");
+                logger().warning("========================================");
+            } else {
+                geyserExtrasInstalled = false;
+                debug("GeyserExtras not detected");
+            }
+        } catch (Exception e) {
+            geyserExtrasInstalled = false;
+            debug("GeyserExtras detection failed: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Check if GeyserExtras is installed.
+     * @return true if GeyserExtras is available
+     */
+    public boolean isGeyserExtrasInstalled() {
+        return geyserExtrasInstalled;
     }
 
     /**
      * Registers packet injectors to intercept Bedrock packets
      */
     private void registerPacketInjectors() {
-        Registries.BEDROCK_PACKET_TRANSLATORS.register(InteractPacket.class, new BedrockInteractInjector());
-        debug("Registered BedrockInteractInjector for double-click detection");
+        BedrockInteractInjector injector = new BedrockInteractInjector();
+        Registries.BEDROCK_PACKET_TRANSLATORS.register(InteractPacket.class, injector);
+        logger().info("Registered BedrockInteractInjector for double-click detection");
+        debug("InteractPacket translator registered: " + Registries.BEDROCK_PACKET_TRANSLATORS.get(InteractPacket.class).getClass().getName());
     }
 
     @Subscribe
@@ -71,6 +114,10 @@ public class GeyserMenuExtension implements Extension {
         MenuCommand menuCommand = new MenuCommand(this);
         event.register(menuCommand.build());
         debug("Registered /geysermenu menu command");
+        
+        // Register the /gemu fallback command
+        event.register(menuCommand.buildGemuCommand());
+        debug("Registered /gemu fallback command");
     }
 
     @Subscribe

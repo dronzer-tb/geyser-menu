@@ -5,6 +5,7 @@ import com.geysermenu.extension.network.ButtonManager;
 import com.geysermenu.extension.network.ClientHandler;
 import com.geysermenu.extension.network.protocol.ButtonData;
 import org.geysermc.geyser.api.connection.GeyserConnection;
+import org.geysermc.geyser.session.GeyserSession;
 
 import java.util.List;
 
@@ -12,6 +13,12 @@ import java.util.List;
  * The main menu shown when players double-click their inventory
  */
 public class MainMenu extends BaseMenu {
+
+    private static final String ICON_SPAWN = "textures/items/bed_red";
+    private static final String ICON_BACK = "textures/ui/back_button_default";
+    private static final String ICON_ENDERCHEST = "textures/blocks/ender_chest_front";
+    private static final String ICON_RECONNECT = "textures/ui/refresh_light";
+    private static final String ICON_SWAP_OFFHAND = "textures/ui/move";
 
     private final GeyserMenuExtension extension;
     private GeyserConnection connection;
@@ -38,10 +45,67 @@ public class MainMenu extends BaseMenu {
             });
         }
         
-        // Add default Settings button at the end
-        addButton("Settings", () -> {
-            new SettingsMenu(extension).send(connection);
+        // Add utility buttons (these require EssentialsX on the server)
+        addButton("§6Swap Offhand", ICON_SWAP_OFFHAND, () -> {
+            swapOffhand();
         });
+        
+        addButton("§aSpawn", ICON_SPAWN, () -> {
+            executeCommand("spawn");
+        });
+        
+        addButton("§eBack", ICON_BACK, () -> {
+            executeCommand("back");
+        });
+        
+        addButton("§5Ender Chest", ICON_ENDERCHEST, () -> {
+            executeCommand("ec");
+        });
+        
+        // Only add GeyserExtras reconnect button if GeyserExtras is installed
+        if (extension.isGeyserExtrasInstalled()) {
+            addButton("§bReconnect", ICON_RECONNECT, () -> {
+                reconnectPlayer();
+            });
+        }
+    }
+    
+    /**
+     * Execute a command as the player.
+     */
+    private void executeCommand(String command) {
+        if (connection instanceof GeyserSession session) {
+            extension.debug("Executing command for " + connection.bedrockUsername() + ": /" + command);
+            session.sendCommand(command);
+        }
+    }
+    
+    /**
+     * Reconnect the player to the server (transfer to same address).
+     * This mimics GeyserExtras reconnect functionality.
+     */
+    private void reconnectPlayer() {
+        if (connection instanceof GeyserSession session) {
+            extension.debug("Reconnecting player: " + connection.bedrockUsername());
+            try {
+                String address = session.joinAddress();
+                int port = session.joinPort();
+                session.transfer(address, port);
+            } catch (Exception e) {
+                extension.logger().warning("Failed to reconnect player: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Swap the item in the player's main hand with the offhand.
+     * This mimics GeyserExtras swap offhand functionality.
+     */
+    private void swapOffhand() {
+        if (connection instanceof GeyserSession session) {
+            extension.debug("Swapping offhand for player: " + connection.bedrockUsername());
+            session.requestOffhandSwap();
+        }
     }
     
     /**

@@ -35,6 +35,22 @@ public class MenuCommand {
     }
 
     /**
+     * Builds the standalone /gemu fallback command for registration.
+     * This provides an alternative way to open the menu if double-click detection fails.
+     */
+    public Command buildGemuCommand() {
+        return Command.builder(extension)
+                .source(GeyserConnection.class)
+                .name("gemu")
+                .description("Opens the GeyserMenu (fallback command)")
+                .permission("geysermenu.command.menu", TriState.TRUE)
+                .playerOnly(true)
+                .bedrockOnly(true)
+                .executor(this::execute)
+                .build();
+    }
+
+    /**
      * Executes the menu command.
      */
     private void execute(CommandSource source, org.geysermc.geyser.api.command.Command command, String[] args) {
