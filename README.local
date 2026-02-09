@@ -1,0 +1,623 @@
+# GeyserMenu
+
+A Geyser Extension that provides reliable Bedrock form delivery and a customizable menu system for Minecraft server networks.
+
+**Credits:** Includes FormsAPI functionality by [DronzerStudios](https://dronzerstudios.tech/)
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GEYSER STANDALONE                        │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  GeyserMenu Extension                                 │  │
+│  │  - Listens on TCP port 19133                          │  │
+│  │  - Receives JSON form/menu requests                   │  │
+│  │  - Finds player session by UUID                       │  │
+│  │  - Calls session.sendForm() directly                  │  │
+│  │  - Executes commands on form response                 │  │
+│  │  - Double-click inventory opens menu                  │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                           │                                 │
+│                           ▼                                 │
+│                   Bedrock Client                            │
+│                   (sees the form!)                          │
+└─────────────────────────────────────────────────────────────┘
+                            ▲
+                            │ TCP Connection
+                            │
+┌───────────────────────────┴─────────────────────────────────┐
+│                    SPIGOT/PAPER SERVER                      │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  GeyserMenuCompanion Plugin                           │  │
+│  │  - Connects to GeyserMenu via TCP                     │  │
+│  │  - Provides API for other plugins                     │  │
+│  │  - Registers custom menu buttons                      │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                           ▲                                 │
+│                           │ Plugin API                      │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Your Custom Plugin                                   │  │
+│  │  - Uses GeyserMenuCompanion API                       │  │
+│  │  - Adds buttons, sends forms                          │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+- ✅ **Double-click inventory menu** - Players can double-click inventory to open the menu
+- ✅ **TCP form requests** - Send forms via TCP from companion plugins
+- ✅ **Modal forms** - Yes/No dialogs with command execution
+- ✅ **Simple forms** - Button menus with images and per-button commands
+- ✅ **Dynamic buttons** - Register custom buttons from companion plugins
+- ✅ **YAML config** - Easy-to-read configuration format
+- ✅ **Authentication** - Secure connection with secret key
+
+## Installation
+
+### Geyser Extension
+1. Download `GeyserMenu.jar`
+2. Place it in your Geyser Standalone's `extensions/` folder
+3. Start Geyser Standalone
+4. Configure `extensions/GeyserMenu/config.yml`
+
+### Companion Plugin (Spigot/Paper)
+1. Download `GeyserMenuCompanion.jar`
+2. Place it in your Spigot/Paper server's `plugins/` folder
+3. Start the server
+4. Configure `plugins/GeyserMenuCompanion/config.yml` with matching settings
+
+## Configuration
+
+### GeyserMenu Extension (config.yml)
+```yaml
+# GeyserMenu Extension Configuration
+
+# TCP Server Settings
+tcp-port: 19133
+tcp-host: "0.0.0.0"
+
+# Security Settings
+secret-key: "your-secret-key-here"
+require-authentication: true
+enable-ssl: false
+
+# Double-Click Menu Settings
+enable-double-click-menu: true
+double-click-threshold-ms: 200
+
+# Menu Settings
+default-menu-title: "Server Menu"
+
+# Debug Settings
+debug-mode: false
+```
+
+### Companion Plugin (config.yml)
+```yaml
+# GeyserMenuCompanion Configuration
+
+# Connection to GeyserMenu extension
+geyser-host: "localhost"
+geyser-port: 19133
+secret-key: "your-secret-key-here"
+
+# Server identifier
+server-id: "lobby"
+
+# Auto-reconnect settings
+auto-reconnect: true
+reconnect-delay: 5000
+```
+
+---
+
+# API Documentation
+
+## TCP Protocol
+
+All communication uses JSON over TCP. Each message is prefixed with a 4-byte length field.
+
+### Packet Structure
+```json
+{
+  "type": "PACKET_TYPE",
+  "payload": "JSON_STRING_PAYLOAD"
+}
+```
+
+### Packet Types
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `AUTH_REQUEST` | Client → Server | Authentication with secret key |
+| `AUTH_RESPONSE` | Server → Client | Authentication result |
+| `SEND_MENU` | Client → Server | Send a dynamic menu to player |
+| `MENU_RESPONSE` | Server → Client | Player's menu selection |
+| `FORM_REQUEST` | Client → Server | Send a form (FormsAPI compatible) |
+| `FORM_RESPONSE` | Server → Client | Player's form response |
+| `PLAYER_JOIN` | Server → Client | Bedrock player joined |
+| `PLAYER_LEAVE` | Server → Client | Bedrock player left |
+| `PLAYER_LIST` | Client → Server | Request online player list |
+| `PLAYER_LIST_RESPONSE` | Server → Client | List of online players |
+| `PING` | Both | Keepalive ping |
+| `PONG` | Both | Keepalive pong |
+| `ERROR` | Server → Client | Error message |
+
+---
+
+## Authentication
+
+Before sending any requests, you must authenticate:
+
+### Request
+```json
+{
+  "type": "AUTH_REQUEST",
+  "payload": "{\"serverIdentifier\":\"lobby\",\"secretKey\":\"your-secret-key\"}"
+}
+```
+
+### Response (Success)
+```json
+{
+  "type": "AUTH_RESPONSE",
+  "payload": "{\"success\":true,\"message\":\"Authentication successful\"}"
+}
+```
+
+### Response (Failure)
+```json
+{
+  "type": "AUTH_RESPONSE",
+  "payload": "{\"success\":false,\"message\":\"Invalid secret key\"}"
+}
+```
+
+---
+
+## Sending Forms (FormsAPI Compatible)
+
+### Simple Form (Button Menu)
+
+```json
+{
+  "type": "FORM_REQUEST",
+  "payload": "{\"request_id\":\"unique-id-123\",\"player_uuid\":\"00000000-0000-0000-0009-01f200e0da15\",\"form_type\":\"simple\",\"title\":\"Server Menu\",\"content\":\"Select an option:\",\"buttons\":[{\"text\":\"Teleport to Spawn\",\"command\":\"spawn\"},{\"text\":\"Open Shop\",\"image_type\":\"url\",\"image_data\":\"https://example.com/shop.png\",\"command\":\"shop\"},{\"text\":\"Player Settings\"}]}"
+}
+```
+
+#### Payload Details:
+```json
+{
+  "request_id": "unique-id-123",
+  "player_uuid": "00000000-0000-0000-0009-01f200e0da15",
+  "form_type": "simple",
+  "title": "Server Menu",
+  "content": "Select an option:",
+  "buttons": [
+    {
+      "text": "Teleport to Spawn",
+      "command": "spawn"
+    },
+    {
+      "text": "Open Shop",
+      "image_type": "url",
+      "image_data": "https://example.com/shop.png",
+      "command": "shop"
+    },
+    {
+      "text": "Player Settings"
+    }
+  ]
+}
+```
+
+#### Button Properties:
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `text` | string | Yes | Button label text |
+| `command` | string | No | Command to execute when clicked (without /) |
+| `image_type` | string | No | `"url"` or `"path"` for button icon |
+| `image_data` | string | No | URL or resource path for the icon |
+
+### Modal Form (Yes/No Dialog)
+
+```json
+{
+  "type": "FORM_REQUEST",
+  "payload": "{\"request_id\":\"unique-id-456\",\"player_uuid\":\"00000000-0000-0000-0009-01f200e0da15\",\"form_type\":\"modal\",\"title\":\"Teleport Request\",\"content\":\"PlayerA wants to teleport to you.\\n\\nDo you accept?\",\"button1\":\"Accept\",\"button2\":\"Deny\",\"command_accept\":\"tpaccept\",\"command_deny\":\"tpdeny\"}"
+}
+```
+
+#### Payload Details:
+```json
+{
+  "request_id": "unique-id-456",
+  "player_uuid": "00000000-0000-0000-0009-01f200e0da15",
+  "form_type": "modal",
+  "title": "Teleport Request",
+  "content": "PlayerA wants to teleport to you.\n\nDo you accept?",
+  "button1": "Accept",
+  "button2": "Deny",
+  "command_accept": "tpaccept",
+  "command_deny": "tpdeny"
+}
+```
+
+### Form Response
+
+When the player interacts with a form, you receive:
+
+```json
+{
+  "type": "FORM_RESPONSE",
+  "payload": "{\"request_id\":\"unique-id-123\",\"player_uuid\":\"00000000-0000-0000-0009-01f200e0da15\",\"response_type\":\"success\",\"clicked_button\":0,\"confirmed\":false}"
+}
+```
+
+#### Response Types:
+| Type | Description |
+|------|-------------|
+| `success` | Player clicked a button |
+| `closed` | Player closed the form without selecting |
+| `error` | An error occurred |
+
+---
+
+## Sending Dynamic Menus
+
+For more complex menus with callback handling:
+
+### Request
+```json
+{
+  "type": "SEND_MENU",
+  "payload": "{\"targetPlayer\":\"00000000-0000-0000-0009-01f200e0da15\",\"menuId\":\"main-menu\",\"title\":\"Server Menu\",\"content\":\"Welcome to our server!\",\"buttons\":[{\"id\":\"spawn\",\"text\":\"Teleport to Spawn\",\"imageUrl\":\"https://example.com/spawn.png\"},{\"id\":\"shop\",\"text\":\"Open Shop\"},{\"id\":\"settings\",\"text\":\"Settings\"}]}"
+}
+```
+
+### Response
+```json
+{
+  "type": "MENU_RESPONSE",
+  "payload": "{\"menuId\":\"main-menu\",\"playerUuid\":\"00000000-0000-0000-0009-01f200e0da15\",\"buttonId\":\"spawn\",\"buttonIndex\":0}"
+}
+```
+
+---
+
+## Java API (Companion Plugin)
+
+### Adding as Dependency
+
+#### Maven
+```xml
+<dependency>
+    <groupId>com.geysermenu</groupId>
+    <artifactId>companion-api</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <scope>provided</scope>
+</dependency>
+```
+
+#### Gradle
+```kotlin
+compileOnly("com.geysermenu:companion-api:1.0.0-SNAPSHOT")
+```
+
+### Basic Usage
+
+```java
+import com.geysermenu.companion.api.GeyserMenuAPI;
+import com.geysermenu.companion.api.MenuButton;
+import com.geysermenu.companion.api.FormBuilder;
+
+public class MyPlugin extends JavaPlugin {
+    
+    @Override
+    public void onEnable() {
+        // Get the API instance
+        GeyserMenuAPI api = GeyserMenuAPI.getInstance();
+        
+        // Register a global menu button (appears for all players)
+        api.registerButton(MenuButton.builder()
+            .id("my-plugin-button")
+            .text("My Plugin Menu")
+            .imageUrl("https://example.com/icon.png")
+            .priority(10)  // Lower = higher in list
+            .onClick((player, session) -> {
+                // Handle button click
+                player.sendMessage("You clicked my button!");
+                
+                // Open a sub-menu
+                sendMyPluginMenu(player);
+            })
+            .build());
+    }
+    
+    private void sendMyPluginMenu(Player player) {
+        GeyserMenuAPI api = GeyserMenuAPI.getInstance();
+        
+        // Create a simple form
+        api.sendForm(player, FormBuilder.simple()
+            .title("My Plugin Menu")
+            .content("Select an option:")
+            .button("Option 1", () -> {
+                player.sendMessage("You selected option 1!");
+            })
+            .button("Option 2", "textures/items/diamond", () -> {
+                player.sendMessage("You selected option 2!");
+            })
+            .onClose(() -> {
+                player.sendMessage("Menu closed");
+            })
+            .build());
+    }
+    
+    @Override
+    public void onDisable() {
+        // Unregister your buttons
+        GeyserMenuAPI.getInstance().unregisterButton("my-plugin-button");
+    }
+}
+```
+
+### Registering Conditional Buttons
+
+```java
+// Button only visible to players with permission
+api.registerButton(MenuButton.builder()
+    .id("admin-button")
+    .text("Admin Panel")
+    .condition(player -> player.hasPermission("myplugin.admin"))
+    .onClick((player, session) -> {
+        openAdminPanel(player);
+    })
+    .build());
+
+// Button only visible to Bedrock players in a specific world
+api.registerButton(MenuButton.builder()
+    .id("world-specific")
+    .text("World Menu")
+    .condition(player -> player.getWorld().getName().equals("lobby"))
+    .onClick((player, session) -> {
+        // Handle click
+    })
+    .build());
+```
+
+### Sending Modal Forms
+
+```java
+api.sendForm(player, FormBuilder.modal()
+    .title("Confirm Action")
+    .content("Are you sure you want to do this?")
+    .button1("Yes, do it!")
+    .button2("No, cancel")
+    .onConfirm(() -> {
+        player.sendMessage("Action confirmed!");
+        performAction(player);
+    })
+    .onDeny(() -> {
+        player.sendMessage("Action cancelled.");
+    })
+    .build());
+```
+
+### Listening for Player Events
+
+```java
+api.onPlayerJoin(playerData -> {
+    getLogger().info("Bedrock player joined: " + playerData.getName());
+    getLogger().info("UUID: " + playerData.getUuid());
+    getLogger().info("XUID: " + playerData.getXuid());
+});
+
+api.onPlayerLeave(playerData -> {
+    getLogger().info("Bedrock player left: " + playerData.getName());
+});
+```
+
+### Getting Online Bedrock Players
+
+```java
+List<BedrockPlayer> bedrockPlayers = api.getOnlineBedrockPlayers();
+
+for (BedrockPlayer bp : bedrockPlayers) {
+    getLogger().info("Player: " + bp.getName() + " (UUID: " + bp.getUuid() + ")");
+}
+```
+
+---
+
+## Raw TCP Client Example (Java)
+
+If you want to implement your own TCP client:
+
+```java
+import java.io.*;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+
+public class GeyserMenuClient {
+    private Socket socket;
+    private DataInputStream in;
+    private DataOutputStream out;
+    
+    public void connect(String host, int port) throws IOException {
+        socket = new Socket(host, port);
+        in = new DataInputStream(socket.getInputStream());
+        out = new DataOutputStream(socket.getOutputStream());
+    }
+    
+    public void authenticate(String serverIdentifier, String secretKey) throws IOException {
+        String payload = String.format(
+            "{\"serverIdentifier\":\"%s\",\"secretKey\":\"%s\"}",
+            serverIdentifier, secretKey
+        );
+        sendPacket("AUTH_REQUEST", payload);
+        
+        String response = receivePacket();
+        System.out.println("Auth response: " + response);
+    }
+    
+    public void sendForm(String playerUuid, String title, String content, String... buttons) throws IOException {
+        StringBuilder buttonsJson = new StringBuilder("[");
+        for (int i = 0; i < buttons.length; i++) {
+            if (i > 0) buttonsJson.append(",");
+            buttonsJson.append("{\"text\":\"").append(buttons[i]).append("\"}");
+        }
+        buttonsJson.append("]");
+        
+        String payload = String.format(
+            "{\"request_id\":\"%s\",\"player_uuid\":\"%s\",\"form_type\":\"simple\",\"title\":\"%s\",\"content\":\"%s\",\"buttons\":%s}",
+            java.util.UUID.randomUUID().toString(),
+            playerUuid,
+            title,
+            content,
+            buttonsJson.toString()
+        );
+        
+        sendPacket("FORM_REQUEST", payload);
+    }
+    
+    private void sendPacket(String type, String payload) throws IOException {
+        String json = String.format("{\"type\":\"%s\",\"payload\":%s}", 
+            type, 
+            com.google.gson.JsonParser.parseString(payload).toString());
+        
+        byte[] data = json.getBytes(StandardCharsets.UTF_8);
+        out.writeInt(data.length);
+        out.write(data);
+        out.flush();
+    }
+    
+    private String receivePacket() throws IOException {
+        int length = in.readInt();
+        byte[] data = new byte[length];
+        in.readFully(data);
+        return new String(data, StandardCharsets.UTF_8);
+    }
+    
+    public void close() throws IOException {
+        if (socket != null) socket.close();
+    }
+}
+```
+
+---
+
+## Python Client Example
+
+```python
+import socket
+import struct
+import json
+
+class GeyserMenuClient:
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self.sock = None
+    
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.host, self.port))
+    
+    def send_packet(self, packet_type: str, payload: dict):
+        packet = {
+            "type": packet_type,
+            "payload": json.dumps(payload)
+        }
+        data = json.dumps(packet).encode('utf-8')
+        # Send length prefix (4 bytes, big endian)
+        self.sock.sendall(struct.pack('>I', len(data)) + data)
+    
+    def receive_packet(self) -> dict:
+        # Read length prefix
+        length_data = self.sock.recv(4)
+        length = struct.unpack('>I', length_data)[0]
+        # Read packet data
+        data = self.sock.recv(length)
+        return json.loads(data.decode('utf-8'))
+    
+    def authenticate(self, server_id: str, secret_key: str):
+        self.send_packet("AUTH_REQUEST", {
+            "serverIdentifier": server_id,
+            "secretKey": secret_key
+        })
+        response = self.receive_packet()
+        print(f"Auth response: {response}")
+        return response
+    
+    def send_simple_form(self, player_uuid: str, title: str, content: str, buttons: list):
+        import uuid
+        self.send_packet("FORM_REQUEST", {
+            "request_id": str(uuid.uuid4()),
+            "player_uuid": player_uuid,
+            "form_type": "simple",
+            "title": title,
+            "content": content,
+            "buttons": [{"text": btn} for btn in buttons]
+        })
+    
+    def close(self):
+        if self.sock:
+            self.sock.close()
+
+# Usage example
+if __name__ == "__main__":
+    client = GeyserMenuClient("localhost", 19133)
+    client.connect()
+    client.authenticate("my-server", "your-secret-key")
+    
+    # Send a form to a player
+    client.send_simple_form(
+        "00000000-0000-0000-0009-01f200e0da15",
+        "Welcome!",
+        "Choose an option:",
+        ["Option 1", "Option 2", "Option 3"]
+    )
+    
+    # Wait for response
+    response = client.receive_packet()
+    print(f"Form response: {response}")
+    
+    client.close()
+```
+
+---
+
+## Troubleshooting
+
+### Extension won't load
+- Check that the extension.yml is valid (no `description` field)
+- Ensure API version matches your Geyser version
+- Check Geyser logs for detailed error messages
+
+### TCP connection refused
+- Verify the port matches in both configs
+- Check firewall settings
+- Ensure GeyserMenu extension loaded successfully
+
+### Forms not appearing
+- Verify player UUID is correct (Java UUID, not Bedrock XUID)
+- Check debug-mode for detailed logs
+- Ensure the player is online and connected via Bedrock
+
+### Authentication failing
+- Verify secret-key matches exactly in both configs
+- Check for trailing spaces or special characters
+
+---
+
+## License
+
+MIT License with Attribution Requirement
+
+Copyright (c) 2024 kasniya & DronzerStudios
+
+See [LICENSE](LICENSE) for full details.
