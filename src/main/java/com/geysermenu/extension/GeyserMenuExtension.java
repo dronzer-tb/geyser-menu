@@ -48,15 +48,21 @@ public class GeyserMenuExtension implements Extension {
         // Register inventory handler for player join/leave events
         this.inventoryHandler = new InventoryHandler(this);
 
-        // Register the BedrockInteractInjector to intercept inventory open packets
-        if (config.isEnableDoubleClickMenu()) {
-            registerPacketInjectors();
-            logger().info("Double-click inventory menu detection enabled");
-        }
-        
         // Check for GeyserExtras and notify admins
         checkForGeyserExtras();
 
+        // Register the BedrockInteractInjector to intercept inventory open packets
+        if (config.isEnableDoubleClickMenu()) {
+            if (geyserExtrasInstalled) {
+                logger().warning("Double-click menu disabled automatically because GeyserExtras is installed.");
+                logger().warning("GeyserExtras conflicts with GeyserMenu's packet injector and causes errors.");
+                logger().warning("To use double-click menu, remove GeyserExtras or disable its custom menu feature.");
+            } else {
+                registerPacketInjectors();
+                logger().info("Double-click inventory menu detection enabled");
+            }
+        }
+        
         debug("TCP server started, inventory handler registered");
         logger().info("GeyserMenu v" + this.description().version() + " has been enabled!");
     }

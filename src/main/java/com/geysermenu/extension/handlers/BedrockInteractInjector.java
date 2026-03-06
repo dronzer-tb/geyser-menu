@@ -33,7 +33,7 @@ public class BedrockInteractInjector extends PacketTranslator<InteractPacket> {
         
         if (packet.getAction() == InteractPacket.Action.OPEN_INVENTORY) {
             if (config != null && config.isEnableDoubleClickMenu()) {
-                UUID playerUuid = session.getPlayerEntity().getUuid();
+                UUID playerUuid = session.getPlayerEntity().uuid();
                 long currentTime = System.currentTimeMillis();
                 Long lastClick = lastInventoryClickTime.get(playerUuid);
                 
@@ -70,7 +70,21 @@ public class BedrockInteractInjector extends PacketTranslator<InteractPacket> {
                 ScheduledFuture<?> future = session.scheduleInEventLoop(() -> {
                     // If we get here, it was a single click - open inventory normally
                     pendingInventoryFutures.remove(playerUuid);
-                    originalTranslator.translate(session, packet);
+                    
+                    // Verify session is still valid before attempting delayed inventory open
+                    if (!session.isClosed()) {
+                        try {
+                            originalTranslator.translate(session, packet);
+                        } catch (Exception e) {
+                            if (extension != null) {
+                                extension.debug("Delayed inventory open failed for " + 
+                                    session.bedrockUsername() + ": " + e.getMessage());
+                            }
+                        }
+                    } else if (extension != null && config != null && config.isDebugMode()) {
+                        extension.debug("Skipped delayed inventory open for " + 
+                            session.bedrockUsername() + " - session no longer valid");
+                    }
                 }, thresholdMs + 20, TimeUnit.MILLISECONDS);
                 
                 pendingInventoryFutures.put(playerUuid, future);

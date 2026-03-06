@@ -1,10 +1,11 @@
 plugins {
     java
     id("com.gradleup.shadow") version "9.0.0-beta4"
+    id("com.modrinth.minotaur") version "2.+"
 }
 
 group = "com.geysermenu"
-version = "1.1.4"
+version = "1.1.6"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
@@ -24,7 +25,7 @@ repositories {
 
 dependencies {
     // Geyser Core (for internal packet translators and registries)
-    compileOnly("org.geysermc.geyser:core:2.9.1-SNAPSHOT")
+    compileOnly("org.geysermc.geyser:core:2.9.3-SNAPSHOT")
 
     // Cumulus (Forms) - usually bundled with Geyser
     compileOnly("org.geysermc.cumulus:cumulus:1.1.2")
@@ -62,4 +63,26 @@ tasks.shadowJar {
 
 tasks.build {
     dependsOn(tasks.shadowJar)
+}
+
+modrinth {
+    token.set(System.getenv("MODRINTH_TOKEN"))
+    projectId.set("geysermenu")  // Your Modrinth project ID/slug
+    versionNumber.set(version.toString())
+    versionName.set("GeyserMenu ${version}")
+    versionType.set("release")  // release, beta, or alpha
+    uploadFile.set(tasks.shadowJar)
+    gameVersions.addAll("1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.2", "1.21.3", "1.21.4", "1.21.5")
+    loaders.add("geyser")
+    changelog.set("""
+        ## Changes in ${version}
+        - Fixed inventory double-click detection for menu trigger
+        - Fixed Netty thread shutdown on server stop
+        - Fixed button resync after player reconnection
+        - Improved GeyserExtras integration
+    """.trimIndent())
+    
+    dependencies {
+        required.project("geyser")
+    }
 }

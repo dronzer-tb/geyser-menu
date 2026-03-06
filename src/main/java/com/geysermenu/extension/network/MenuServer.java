@@ -14,10 +14,14 @@ import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.handler.timeout.IdleStateEvent;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.CharsetUtil;
 
+import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -29,6 +33,11 @@ public class MenuServer {
     private final DynamicMenuHandler dynamicMenuHandler;
     private final ButtonManager buttonManager;
     private final Map<String, ClientHandler> connectedClients = new ConcurrentHashMap<>();
+    
+    // Rate limiting: track recent connection attempts per IP
+    private static final int MAX_CONNECTIONS_PER_IP = 5;
+    private static final long RATE_LIMIT_WINDOW_MS = 10_000; // 10 seconds
+    private final Map<String, long[]> connectionAttempts = new ConcurrentHashMap<>();
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -69,12 +78,33 @@ public class MenuServer {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {
+                            // Rate limit: reject connections from IPs connecting too frequently
+                            String remoteIp = ((InetSocketAddress) ch.remoteAddress()).getAddress().getHostAddress();
+                            if (isRateLimited(remoteIp)) {
+                                extension.logger().warning("Rate limited connection from " + remoteIp + " (too many attempts). Closing.");
+                                ch.close();
+                                return;
+                            }
+                            
                             ChannelPipeline pipeline = ch.pipeline();
 
                             // SSL for secure connection (if enabled)
                             if (useSsl && finalSslContext != null) {
                                 pipeline.addLast(finalSslContext.newHandler(ch.alloc()));
                             }
+
+                            // Idle timeout: close connections with no activity after 30 seconds
+                            // This helps clean up port scanners and stale connections
+                            pipeline.addLast(new IdleStateHandler(30, 0, 0, TimeUnit.SECONDS));
+                            pipeline.addLast(new ChannelInboundHandlerAdapter() {
+                                @Override
+                                public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+                                    if (evt instanceof IdleStateEvent) {
+                                        extension.logger().debug("Closing idle connection from " + ctx.channel().remoteAddress());
+                                        ctx.close();
+                                    }
+                                }
+                            });
 
                             // Frame decoder/encoder - max 1MB messages
                             pipeline.addLast(new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4));
@@ -161,5 +191,29 @@ public class MenuServer {
 
     public GeyserMenuExtension getExtension() {
         return extension;
+    }
+    
+    /**
+     * Checks if an IP address has exceeded the maximum connection rate.
+     * Tracks connection timestamps in a sliding window.
+     */
+    private boolean isRateLimited(String ip) {
+        long now = System.currentTimeMillis();
+        long[] timestamps = connectionAttempts.compute(ip, (key, existing) -> {
+            if (existing == null) {
+                return new long[]{now};
+            }
+            // Filter out old timestamps outside the window
+            long cutoff = now - RATE_LIMIT_WINDOW_MS;
+            long[] recent = java.util.Arrays.stream(existing)
+                .filter(t -> t > cutoff)
+                .toArray();
+            // Add current timestamp
+            long[] updated = new long[recent.length + 1];
+            System.arraycopy(recent, 0, updated, 0, recent.length);
+            updated[recent.length] = now;
+            return updated;
+        });
+        return timestamps.length > MAX_CONNECTIONS_PER_IP;
     }
 }

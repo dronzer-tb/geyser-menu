@@ -56,16 +56,34 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     protected void channelRead0(ChannelHandlerContext ctx, String message) {
         try {
             Packet packet = GSON.fromJson(message, Packet.class);
+            if (packet == null || packet.getType() == null) {
+                extension.logger().warning("Received null/invalid packet from " + channel.remoteAddress() + ". Closing connection.");
+                ctx.close();
+                return;
+            }
             handlePacket(packet);
+        } catch (com.google.gson.JsonSyntaxException e) {
+            extension.logger().warning("Received malformed JSON from " + channel.remoteAddress() + ": " + e.getMessage() + ". Closing connection.");
+            ctx.close();
         } catch (Exception e) {
-            extension.logger().error("Error processing message: " + e.getMessage());
+            extension.logger().error("Error processing message from " + channel.remoteAddress() + ": " + e.getMessage());
             sendError("Invalid packet format");
         }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        extension.logger().error("Connection error", cause);
+        // Handle oversized/malformed frames gracefully (e.g. port scanners, non-protocol connections)
+        if (cause instanceof io.netty.handler.codec.TooLongFrameException) {
+            extension.logger().warning("Rejected oversized frame from " + channel.remoteAddress() 
+                + " (possible port scan or misconfigured client). Closing connection.");
+        } else if (cause instanceof java.io.IOException) {
+            extension.logger().warning("Connection I/O error from " 
+                + (channel != null ? channel.remoteAddress() : "unknown") + ": " + cause.getMessage());
+        } else {
+            extension.logger().error("Connection error from " 
+                + (channel != null ? channel.remoteAddress() : "unknown"), cause);
+        }
         ctx.close();
     }
 
