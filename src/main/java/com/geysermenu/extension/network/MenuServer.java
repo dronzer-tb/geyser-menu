@@ -93,10 +93,11 @@ public class MenuServer {
                                 pipeline.addLast(finalSslContext.newHandler(ch.alloc()));
                             }
 
-                            // Idle timeout: close connections with no activity after 30 seconds
+                            // Idle timeout: close unauthenticated connections with no activity after 30 seconds
                             // This helps clean up port scanners and stale connections
-                            pipeline.addLast(new IdleStateHandler(30, 0, 0, TimeUnit.SECONDS));
-                            pipeline.addLast(new ChannelInboundHandlerAdapter() {
+                            // Named handlers so ClientHandler can remove them after successful authentication
+                            pipeline.addLast("idleStateHandler", new IdleStateHandler(30, 0, 0, TimeUnit.SECONDS));
+                            pipeline.addLast("idleCloseHandler", new ChannelInboundHandlerAdapter() {
                                 @Override
                                 public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
                                     if (evt instanceof IdleStateEvent) {

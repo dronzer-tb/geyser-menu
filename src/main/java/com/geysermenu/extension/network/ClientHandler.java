@@ -109,6 +109,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
             authenticated = true;
             clientIdentifier = authData.getServerIdentifier();
             server.registerClient(clientIdentifier, this);
+            removeIdleTimeout();
             sendAuthResponse(true, "Authentication disabled - connected");
             return;
         }
@@ -119,6 +120,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
             authenticated = true;
             clientIdentifier = authData.getServerIdentifier();
             server.registerClient(clientIdentifier, this);
+            removeIdleTimeout();
             sendAuthResponse(true, "Authentication successful");
             extension.logger().info("Client authenticated: " + clientIdentifier);
         } else {
@@ -416,6 +418,19 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
         sendError(reason);
         if (channel != null) {
             channel.close();
+        }
+    }
+
+    /**
+     * Removes the idle timeout handlers from the pipeline after successful authentication.
+     * Authenticated clients are expected to maintain long-lived idle connections.
+     */
+    private void removeIdleTimeout() {
+        if (channel != null && channel.pipeline().get("idleStateHandler") != null) {
+            channel.pipeline().remove("idleStateHandler");
+        }
+        if (channel != null && channel.pipeline().get("idleCloseHandler") != null) {
+            channel.pipeline().remove("idleCloseHandler");
         }
     }
 
